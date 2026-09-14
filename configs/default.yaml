@@ -1,0 +1,34 @@
+model:
+  name: "runwayml/stable-diffusion-v1-5"   # or CompVis/stable-diffusion-v1-4
+  num_inference_steps: 30
+  guidance_scale: 7.5
+  fp16: true
+  seed: 42
+  height: 512
+  width: 512
+
+dfrise:
+  n_masks: 100            # RISE-style N random masks per step
+  latent_size: [64, 64]   # SD1.x latents
+  window_size: 7          # SSIM local window
+  mask_threshold: null    # None = adaptive per-mask threshold
+
+dfcam:
+  # layer inside the U-Net to hook for activations/gradients.
+  # e.g. 'up_blocks.3' (decoder output), 'mid_block' or 'down_blocks.0'
+  target_layer: "up_blocks.3"
+
+exponential:
+  T: 1000
+  l: 30
+  gamma: 60               # early-stage concentration (paper default)
+  gear: "early"           # 'early' | 'late'
+
+eval:
+  fractions: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+  score: "l2"             # l2 prototype; swap to FID/SSIM for real eval
+
+features:
+  list: ["colour", "sharpness", "texture"]
+  blur_kernel_size: 15
+  blur_sigma: 5.0

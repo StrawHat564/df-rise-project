@@ -1,0 +1,17 @@
+# Data / outputs — never push these
+data/
+outputs/
+
+# Model weights
+*.ckpt
+*.safetensors
+__pycache__/
+*.pyc
+
+# Environments
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
