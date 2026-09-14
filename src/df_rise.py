@@ -90,7 +90,12 @@ def df_rise_step(
         S: (h, w) normalized saliency map in [0, 1].
     """
     h, w = latent.shape[-2:]
-    masks = gaussian_binary_masks(n_masks, h, w, mask_threshold, device)
+    # The UNet weights define the canonical dtype; force everything to match it
+    # so fp16 pipelines don't crash on fp32 latents/text_emb (dtype drift).
+    tdtype = next(unet.parameters()).dtype
+    text_emb = text_emb.to(dtype=tdtype)
+    latent = latent.to(dtype=tdtype)
+    masks = gaussian_binary_masks(n_masks, h, w, mask_threshold, device).to(dtype=tdtype)
 
     # The "unperturbed output" f(R_t): noise prediction on the vanilla latent.
     # Note: CFG doubles channel count, so we use masked/vanilla latents per pass.

@@ -4,7 +4,7 @@ Reproduction of **DF-RISE** (Park, Ju, Lee, ESWA 2024 — [Explaining Generative
 
 The Kaggle implementation runs through the paper's three tools, then extends DF-RISE with feature-absence masks to get *concept-resolved* + *temporally-resolved* attribution.
 
-## What is being implemented implementing (in order)
+## What is being implemented (in order)
 
 | # | Tool | Paper section | Status |
 |---|------|---------------|--------|

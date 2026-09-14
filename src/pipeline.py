@@ -115,6 +115,7 @@ def denoise_with_hooks(
 
         # DDIM deterministic update (eta=0)
         prev = scheduler.step(noise_pred, t, latents, eta=0.0).prev_sample
+        prev = prev.to(dtype=latents.dtype)   # scheduler can promote to fp32
         if step_hook is not None:
             step_hook(noise_pred=noise_pred, current=current, t=t, t_idx=t_idx, prev=prev)
         latents = prev
