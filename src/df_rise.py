@@ -46,15 +46,17 @@ def structure_similarity(a: torch.Tensor, b: torch.Tensor,
     """
     a = a.float()
     b = b.float()
-    # local means
-    kernel = torch.ones((1, 1, window_size, window_size),
-                        device=a.device, dtype=a.dtype)
-    kernel /= kernel.sum()
     pad = window_size // 2
+
+    # per-channel, group convolution: one kernel per channel, depthwise
+    c = a.shape[1]
+    kernel = torch.ones((c, 1, window_size, window_size),
+                        device=a.device, dtype=a.dtype)
+    kernel = kernel / window_size**2
 
     def avg(x):
         x = F.pad(x, [pad] * 4, mode="replicate")
-        return F.conv2d(x, kernel, padding=0)
+        return F.conv2d(x, kernel, padding=0, groups=c)
 
     mu_a, mu_b = avg(a), avg(b)
     mu_a2, mu_b2 = mu_a.pow(2), mu_b.pow(2)
@@ -112,9 +114,10 @@ def df_rise_step(
         m = masks[i].to(dtype=latent.dtype, device=device)   # match latent (fp16)
         perturbed = latent * m
         f_masked = predict(perturbed)
-        # structure similarity between predicted-noises (on latent channel 0)
+        # structure similarity between predicted noised images, averaged over
+        # latent channels; weight by mask as in RISE.
         s = structure_similarity(f_orig, f_masked, window_size)
-        acc += (m[0, 0] * s[0, 0])         # weighted mask accumulation
+        acc += (m[0, 0] * s[0].mean(dim=0))     # weighted mask accumulation
 
     S = acc / n_masks
     S = (S - S.min()) / (S.max() - S.min() + 1e-8)
