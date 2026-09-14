@@ -2,9 +2,9 @@
 
 Reproduction of **DF-RISE** (Park, Ju, Lee, ESWA 2024 — [Explaining Generative Diffusion Models via Visual Analysis](https://arxiv.org/abs/2402.10404)) plus a **feature-level extension** (colour / sharpness / texture attribution).
 
-This is Project 4 (Concept-Level XAI for Diffusion Generation) from the roadmap. The Kaggle implementation runs through the paper's three tools, then extends DF-RISE with feature-absence masks to get *concept-resolved* + *temporally-resolved* attribution.
+The Kaggle implementation runs through the paper's three tools, then extends DF-RISE with feature-absence masks to get *concept-resolved* + *temporally-resolved* attribution.
 
-## What we're implementing (in order)
+## What is being implemented implementing (in order)
 
 | # | Tool | Paper section | Status |
 |---|------|---------------|--------|
@@ -31,13 +31,6 @@ dfrise-project/
 └── outputs/                # gitignored
 ```
 
-## Setup — Kaggle
-
-1. Create a GitHub repo and push this folder (see "GitHub workflow" below).
-2. On [kaggle.com](https://kaggle.com), create a **Notebook** with **GPU T4 x2** accelerator.
-3. In the first cell: `!git clone https://github.com/<you>/dfrise-project.git /kaggle/working/dfrise-project`.
-4. Add a **Kaggle Dataset** as an input if you want to bypass repeated SD weight downloads (see notes in `notebooks/`).
-
 ## Setup — local (optional, for debugging small steps)
 
 ```bash
@@ -63,3 +56,4 @@ The paper tests on **Stable Diffusion** (they cite [40] as the Laion-5B pretrain
 3. Add `eval_utils.py` — deletion/insertion + AUC (this is the "does it work" gate).
 4. Add exponential sampling and compare early/later-stage concept emphasis (Fig 1/6 in paper).
 5. **Novelty**: `feature_importance.py` with colour/sharpness/texture features (design in `p4_research_notes.md` §F.17).
+

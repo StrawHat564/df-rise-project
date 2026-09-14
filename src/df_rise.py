@@ -44,8 +44,11 @@ def structure_similarity(a: torch.Tensor, b: torch.Tensor,
     Returns:
         (B, C, H, W) local structure-similarity in texturing order.
     """
+    a = a.float()
+    b = b.float()
     # local means
-    kernel = torch.ones((1, 1, window_size, window_size), device=a.device)
+    kernel = torch.ones((1, 1, window_size, window_size),
+                        device=a.device, dtype=a.dtype)
     kernel /= kernel.sum()
     pad = window_size // 2
 
@@ -101,7 +104,7 @@ def df_rise_step(
 
     acc = torch.zeros((h, w), device=device, dtype=torch.float32)
     for i in range(n_masks):
-        m = masks[i]                       # (1,1,h,w)
+        m = masks[i].to(dtype=latent.dtype, device=device)   # match latent (fp16)
         perturbed = latent * m
         f_masked = predict(perturbed)
         # structure similarity between predicted-noises (on latent channel 0)
