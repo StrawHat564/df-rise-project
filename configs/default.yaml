@@ -9,7 +9,7 @@ model:
 dfrise:
   n_masks: 100            # RISE-style N random masks per step
   window_size: 7          # SSIM local window
-  mask_threshold: null    # None = adaptive per-mask threshold
+  mask_threshold: 0.0     # fixed Gaussian threshold (paper default, ~50% kept); null = adaptive
   seed: 0                 # mask-seed: int = reproducible; null = fresh each run
 
 dfcam:

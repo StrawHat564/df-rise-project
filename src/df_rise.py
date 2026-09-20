@@ -16,17 +16,18 @@ import torch
 import torch.nn.functional as F
 
 
-def gaussian_binary_masks(n: int, h: int, w: int, threshold: float | None = None,
+def gaussian_binary_masks(n: int, h: int, w: int, threshold: float | None = 0.0,
                           device: str = "cuda", seed: int | None = None) -> torch.Tensor:
     """Sample N binary masks (n,1,h,w) by thresholding Gaussian noise.
 
-    The paper samples a Gaussian value per pixel element and thresholds it:
-    value >= threshold -> 1 (keep), value < threshold -> 0 (mask out).
-    Vary threshold per mask so across N draws every pixel config is covered.
+    The paper samples a Gaussian value per pixel element and thresholds it at a
+    FIXED level (default 0.0 -> each pixel kept with prob 0.5): value >=
+    threshold -> 1 (keep), value < threshold -> 0 (mask out).
+    threshold=None keeps an adaptive-per-mask U(0,1) option (experimental).
 
     seed: if None, draws from the global RNG (a fresh, non-reproducible set of
           masks each call -> "refresh"). If an int, uses a local generator
-          seeded with it so the same mask threshold yield the same masks.
+          seeded with it so the same threshold yields the same masks.
     """
     gen = None
     if seed is not None:
@@ -91,12 +92,15 @@ def df_rise_step(
     guidance_scale: float = 7.5,
     window_size: int = 7,
     device: str | torch.device | None = None,
-    mask_threshold: float | None = None,
+    mask_threshold: float | None = 0.0,
     seed: int | None = None,
 ) -> torch.Tensor:
     """Compute a DF-RISE saliency map for a single denoising step t.
 
     device defaults to the latent's own device (auto-follows the pipeline).
+    mask_threshold: fixed threshold for the Gaussian masks (paper default 0.0
+        -> each latent element kept with p=0.5). None = adaptive per-mask
+        threshold (experimental, noisier maps).
     seed: reproducibility for the mask draws. If None, fresh masks each call
         (refresh). If an int, the masks for this step are seeded with
         seed + t so different steps still get different masks, while the same
