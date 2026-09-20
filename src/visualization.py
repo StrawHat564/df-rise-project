@@ -10,7 +10,7 @@ from matplotlib.colors import Normalize
 
 def _upsample(saliency: np.ndarray, size) -> np.ndarray:
     """Bilinear-upscale a (H,W) saliency map to `size` (pixel-res for overlay)."""
-    from torchvision.transforms import functional as F
+    import torch.nn.functional as F
     import torch
     s = torch.from_numpy(np.asarray(saliency, dtype=np.float32))[None, None]
     s = F.interpolate(s, size=size, mode="bilinear", align_corners=False)

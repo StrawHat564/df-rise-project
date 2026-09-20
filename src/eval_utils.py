@@ -22,11 +22,28 @@ def _raster_order(saliency: np.ndarray, descending: bool = True) -> np.ndarray:
     return order[::-1] if descending else order
 
 
+def _match_image_size(saliency: np.ndarray, image: np.ndarray) -> np.ndarray:
+    """Bilinearly upsample `saliency` so its grid matches the image (C,H,W).
+
+    Without this the deletion/insertion games would raster over the saliency's
+    own 64x64 grid while indexing into a 512x512 image -> only the top-left
+    64x64 corner would ever be touched, silently corrupting the scores.
+    """
+    img_h, img_w = image.shape[-2:]
+    s = np.asarray(saliency, dtype=np.float32)
+    if (s.shape[0], s.shape[1]) == (img_h, img_w):
+        return s
+    t = torch.from_numpy(s)[None, None]
+    up = F.interpolate(t, size=(img_h, img_w), mode="bilinear", align_corners=False)
+    return up[0, 0].numpy()
+
+
 def delete_pixels(image: np.ndarray, saliency: np.ndarray,
                   fraction: float, mode: str = "zero") -> np.ndarray:
     """Return image with the top-`fraction` salient pixels degraded."""
     if not 0.0 <= fraction <= 1.0:
         raise ValueError("fraction in [0,1]")
+    saliency = _match_image_size(saliency, image)
     out = image.copy().astype(np.float32)
     order = _raster_order(saliency, descending=True)
     n_delete = int(fraction * order.size)
@@ -45,6 +62,7 @@ def delete_pixels(image: np.ndarray, saliency: np.ndarray,
 def insert_pixels(blank: np.ndarray, image: np.ndarray, saliency: np.ndarray,
                   fraction: float) -> np.ndarray:
     """Return `blank` with the top-`fraction` salient pixels copied from image."""
+    saliency = _match_image_size(saliency, image)
     out = blank.copy().astype(np.float32)
     order = _raster_order(saliency, descending=True)
     n_ins = int(fraction * order.size)
@@ -94,5 +112,5 @@ def auc(curve: np.ndarray, fractions=None) -> float:
     # if curve provided without matching fractions, resample linearly
     if fractions.shape[0] != curve.shape[0]:
         fractions = np.linspace(0.1, 1.0, curve.shape[0])
-    from numpy import trapz
-    return float(trapz(curve, fractions))
+    from numpy import trapezoid
+    return float(trapezoid(curve, fractions))

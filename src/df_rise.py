@@ -17,17 +17,25 @@ import torch.nn.functional as F
 
 
 def gaussian_binary_masks(n: int, h: int, w: int, threshold: float | None = None,
-                          device: str = "cuda") -> torch.Tensor:
+                          device: str = "cuda", seed: int | None = None) -> torch.Tensor:
     """Sample N binary masks (n,1,h,w) by thresholding Gaussian noise.
 
     The paper samples a Gaussian value per pixel element and thresholds it:
     value >= threshold -> 1 (keep), value < threshold -> 0 (mask out).
     Vary threshold per mask so across N draws every pixel config is covered.
+
+    seed: if None, draws from the global RNG (a fresh, non-reproducible set of
+          masks each call -> "refresh"). If an int, uses a local generator
+          seeded with it so the same mask threshold yield the same masks.
     """
-    g = torch.randn(n, 1, h, w, device=device)
+    gen = None
+    if seed is not None:
+        gen = torch.Generator(device=device)
+        gen.manual_seed(int(seed))
+    g = torch.randn(n, 1, h, w, device=device, generator=gen)
     if threshold is None:
         # random threshold in [0,1] per mask gives varied sparsity patterns
-        thresh = torch.rand(n, 1, 1, 1, device=device)
+        thresh = torch.rand(n, 1, 1, 1, device=device, generator=gen)
     else:
         thresh = torch.tensor(float(threshold), device=device)
     return (g >= thresh).float()
@@ -76,31 +84,41 @@ def structure_similarity(a: torch.Tensor, b: torch.Tensor,
 @torch.no_grad()
 def df_rise_step(
     unet,
-    vae,
     text_emb,           # (2, 77, 768) uncond + cond
     latent,             # (1, 4, 64, 64) current x_t
     t: int,
     n_masks: int = 100,
     guidance_scale: float = 7.5,
     window_size: int = 7,
-    device: str = "cuda",
+    device: str | torch.device | None = None,
     mask_threshold: float | None = None,
+    seed: int | None = None,
 ) -> torch.Tensor:
     """Compute a DF-RISE saliency map for a single denoising step t.
 
+    device defaults to the latent's own device (auto-follows the pipeline).
+    seed: reproducibility for the mask draws. If None, fresh masks each call
+        (refresh). If an int, the masks for this step are seeded with
+        seed + t so different steps still get different masks, while the same
+        (seed, t) always reproduces the same map.
     Returns:
         S: (h, w) normalized saliency map in [0, 1].
     """
     h, w = latent.shape[-2:]
+    device = device if device is not None else latent.device
     # The UNet weights define the canonical dtype; force everything to match it
     # so fp16 pipelines don't crash on fp32 latents/text_emb (dtype drift).
     tdtype = next(unet.parameters()).dtype
     text_emb = text_emb.to(dtype=tdtype)
     latent = latent.to(dtype=tdtype)
-    masks = gaussian_binary_masks(n_masks, h, w, mask_threshold, device).to(dtype=tdtype)
+    masks = gaussian_binary_masks(
+        n_masks, h, w, mask_threshold, device,
+        seed=None if seed is None else seed + int(t),
+    ).to(dtype=tdtype)
 
     # The "unperturbed output" f(R_t): noise prediction on the vanilla latent.
-    # Note: CFG doubles channel count, so we use masked/vanilla latents per pass.
+    # Note: CFG doubles the BATCH dim (one uncond + one cond copy), so masked
+    # and vanilla latents are doubled and chunked identically inside predict().
     def predict(z):
         zz = torch.cat([z] * 2)
         pred = unet(zz, torch.as_tensor([t] * 2, device=device), text_emb).sample

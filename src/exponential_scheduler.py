@@ -41,12 +41,15 @@ def exponential_timesteps(
     else:
         raise ValueError(f"gear must be 'early' or 'late', got {gear}")
 
-    # clip numerics, sort descending from T to 0
+    # clip numerics, sort descending from T to 0, and return INT timesteps:
+    # the UNet/scheduler index internal arrays by timestep (alphas_cumprod[t]),
+    # so float64 steps crash or silently misbehave. Floats are rounded so the
+    # counts stay exact (all l steps above).
     steps = np.clip(steps, 0, T)
     steps = np.sort(steps)[::-1]
-    return steps
+    return np.round(steps).astype(int)
 
 
 def uniform_timesteps(T: int = 1000, l: int = 30) -> np.ndarray:
-    """Baseline uniform sampling: equal intervals of T/l."""
-    return np.linspace(T, 0, l + 1)[1:]
+    """Baseline uniform sampling: equal intervals of T/l (ints, same reason)."""
+    return np.round(np.linspace(T, 0, l + 1)[1:]).astype(int)

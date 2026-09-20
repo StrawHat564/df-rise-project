@@ -2,16 +2,15 @@ model:
   name: "runwayml/stable-diffusion-v1-5"   # or CompVis/stable-diffusion-v1-4
   num_inference_steps: 30
   guidance_scale: 7.5
-  fp16: true
+  device: "cuda"          # 'cuda' | 'cpu' — flip to cpu if no NVIDIA GPU
+  fp16: true              # only applied on CUDA; ignored on cpu
   seed: 42
-  height: 512
-  width: 512
 
 dfrise:
   n_masks: 100            # RISE-style N random masks per step
-  latent_size: [64, 64]   # SD1.x latents
   window_size: 7          # SSIM local window
   mask_threshold: null    # None = adaptive per-mask threshold
+  seed: 0                 # mask-seed: int = reproducible; null = fresh each run
 
 dfcam:
   # layer inside the U-Net to hook for activations/gradients.

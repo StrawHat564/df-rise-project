@@ -22,9 +22,14 @@ def load_config(path: str = "configs/default.yaml") -> dict:
         return yaml.safe_load(f)
 
 
-def load_stable_diffusion_components(cfg: dict, device: str = "cuda"):
-    """Return (tokenizer, text_encoder, vae, unet, scheduler) for SD1.x."""
+def load_stable_diffusion_components(cfg: dict, device: str | None = None):
+    """Return (tokenizer, text_encoder, vae, unet, scheduler) for SD1.x.
+
+    device defaults to cfg['model']['device']; resolved device is also stored
+    in the returned dict so downstream callers can follow it.
+    """
     repo = cfg["model"]["name"]
+    device = device or cfg["model"].get("device", "cuda")
 
     tokenizer = CLIPTokenizer.from_pretrained(repo, subfolder="tokenizer")
     text_encoder = CLIPTextModel.from_pretrained(repo, subfolder="text_encoder").to(device)
@@ -34,17 +39,19 @@ def load_stable_diffusion_components(cfg: dict, device: str = "cuda"):
     scheduler = DDIMScheduler.from_pretrained(repo, subfolder="scheduler")
     scheduler.set_timesteps(cfg["model"]["num_inference_steps"])
 
-    if cfg["model"].get("fp16", True):
+    # fp16 is a CUDA-only optimization; silently skip on CPU.
+    if cfg["model"].get("fp16", True) and device.lower().startswith("cuda"):
         unet, vae, text_encoder = unet.half(), vae.half(), text_encoder.half()
 
     return dict(
         tokenizer=tokenizer, text_encoder=text_encoder, vae=vae,
-        unet=unet, scheduler=scheduler,
+        unet=unet, scheduler=scheduler, device=device,
     )
 
 
-def encode_prompt(components, prompt: str, device: str = "cuda") -> torch.Tensor:
+def encode_prompt(components, prompt: str, device: str | None = None) -> torch.Tensor:
     """Return text embeddings for a prompt (plus unconditional embeddings)."""
+    device = device or components.get("device", "cuda")
     tokenizer = components["tokenizer"]
     text_encoder = components["text_encoder"]
 
@@ -72,7 +79,7 @@ def denoise_with_hooks(
     num_steps: int | None = None,
     timestep_override: list[int] | None = None,
     step_hook=None,
-    device: str = "cuda",
+    device: str | None = None,
 ):
     """Run the DDIM reverse process.
 
@@ -85,6 +92,7 @@ def denoise_with_hooks(
         timestep_override: arbitrary list of timesteps (e.g. from
             exponential_scheduler) to use instead of the scheduler default.
     """
+    device = device or components.get("device", "cuda")
     gen = torch.Generator(device=device).manual_seed(seed)
     scheduler, unet, vae = components["scheduler"], components["unet"], components["vae"]
 

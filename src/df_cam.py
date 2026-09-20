@@ -41,10 +41,11 @@ def df_cam_step(
     t: int,
     target_module: nn.Module,
     guidance_scale: float = 7.5,
-    device: str = "cuda",
+    device: str | torch.device | None = None,
 ) -> torch.Tensor:
     """Compute a DF-CAM heatmap for step t against a hooked U-Net module.
 
+    device defaults to the latent's own device (auto-follows the pipeline).
     Args:
         target_module: an nn.Module inside `unet` (e.g. a mid-block or
             decoder block) whose activations become A^k and whose gradients
@@ -52,32 +53,53 @@ def df_cam_step(
     Returns:
         heatmap: (h, w) in [0,1] upsampled to the latent resolution.
     """
-    fh, bh, acts, grads = _register_forward_backward_hooks(target_module)
+    device = device if device is not None else latent.device
+    # Match the UNet's canonical dtype (fp16 on GPU, fp32 on CPU) so that
+    # fp32/fp16-dtype drift can't crash the forward. Same pattern as df_rise.
+    tdtype = next(unet.parameters()).dtype
+    text_emb = text_emb.to(device=device, dtype=tdtype)
+    latent = latent.to(device=device, dtype=tdtype).detach().requires_grad_(True)
 
-    # ---- forward: noise prediction to use as target ----
-    latent.requires_grad_(True)
-    z = torch.cat([latent] * 2)
-    pred = unet(z, torch.as_tensor([t] * 2, device=device), text_emb).sample
-    pred_uncond, pred_text = pred.chunk(2)
-    target_score = pred_text.sum()          # sum of pixels of output rep as target
+    # Hooks MUST be removed on every exit path (success or exception), else
+    # they stay attached to the module and fire on every future forward, keep
+    # stale refs alive and corrupt later activations -> try/finally.
+    fh = bh = None
+    try:
+        fh, bh, acts, grads = _register_forward_backward_hooks(target_module)
 
-    # ---- backward: get grads wrt the hooked module's output ----
-    target_score.backward(retain_graph=True)
+        # ---- forward: noise prediction to use as target ----
+        # Batch shape mirrors denoise_with_hooks (uncond + cond copies). Only
+        # the cond branch's output score is backpropagated, so the uncond
+        # result is discarded (`_`).
+        z = torch.cat([latent] * 2)
+        pred = unet(z, torch.as_tensor([t] * 2, device=device), text_emb).sample
+        _, pred_text = pred.chunk(2)
+        # sum of pixels of the output rep as target; float() avoids fp16
+        # overflow when summing 4*64*64 output values.
+        target_score = pred_text.float().sum()
 
-    A = acts["out"]                          # (B, C, h, w)
-    G = grads["out"]                         # (B, C, h, w)
+        # ---- backward: get grads wrt the hooked module's output ----
+        # retain_graph is unneeded: only one backward and no reuse of the graph.
+        target_score.backward()
 
-    # α_k = global-avg-pool over gradient map
-    alpha = G.mean(dim=(2, 3), keepdim=True)           # (B, C, 1, 1)
-    cam = torch.relu((alpha * A).sum(dim=1, keepdim=True))  # (B, 1, h, w)
+        A = acts["out"]                          # (B, C, h, w)
+        G = grads["out"]                         # (B, C, h, w)
 
-    fh.remove(); bh.remove()
+        # α_k = global-avg-pool over gradient map
+        alpha = G.mean(dim=(2, 3), keepdim=True)           # (B, C, 1, 1)
+        cam = torch.relu((alpha * A).sum(dim=1, keepdim=True))  # (B, 1, h, w)
+    finally:
+        if fh is not None:
+            fh.remove()
+        if bh is not None:
+            bh.remove()
     latent.requires_grad_(False)
 
     # multiple batch entries averaged, normalized
     cam = cam[0, 0] if cam.shape[0] == 1 else cam.mean(0)
     cam = torch.nn.functional.interpolate(
-        cam.unsqueeze(0).unsqueeze(0), size=latent.shape[-2:], mode="bilinear"
+        cam.unsqueeze(0).unsqueeze(0), size=latent.shape[-2:],
+        mode="bilinear", align_corners=False
     )[0, 0]
     cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
     return cam.detach()
