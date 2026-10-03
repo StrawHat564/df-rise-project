@@ -107,8 +107,15 @@ def denoise_with_hooks(
     gen = torch.Generator(device=device).manual_seed(seed)
     scheduler, unet, vae = components["scheduler"], components["unet"], components["vae"]
 
-    if num_steps:
-        scheduler.set_timesteps(num_steps)
+    # Always (re)set the timesteps. DPMSolverMultistepScheduler is stateful
+    # (step_index / model_outputs), so a second denoise call reusing the same
+    # scheduler -- e.g. generating a second prompt in one notebook session --
+    # would keep counting past the end of its sigma array and raise IndexError.
+    # DDIM is stateless and this is a no-op for it.
+    steps = num_steps if num_steps is not None else len(scheduler.timesteps)
+    if steps <= 0:
+        raise ValueError("scheduler has no timesteps; call set_timesteps() first")
+    scheduler.set_timesteps(steps)
     timesteps = timestep_override if timestep_override is not None else scheduler.timesteps
 
     # 1) sample initial latent x_T ~ N(0, I) in latent space (4, 64, 64)
