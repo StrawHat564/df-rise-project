@@ -1,16 +1,17 @@
 model:
-  name: "CompVis/stable-diffusion-v1-4"   # reference checkpoint (X-Diffusion)
-  num_inference_steps: 20
+  name: "runwayml/stable-diffusion-v1-5"
+  num_inference_steps: 30
   guidance_scale: 7.5
   device: "cuda"          # 'cuda' | 'cpu' — flip to cpu if no NVIDIA GPU
   fp16: true              # only applied on CUDA; ignored on cpu
   seed: 42
-  # 'dpmsolver++' matches the reference; 'ddim' is needed for custom
-  # exponential timestep experiments (dpm-solver++ requires its own grid).
-  scheduler: "dpmsolver++"
+  # 'ddim' is the default: it reproduced correct images in the A/B above.
+  # 'dpmsolver++' is what the reference uses and is fine for pure throughput,
+  # but at 20 steps it degraded composition (lost/mangled the horse).
+  scheduler: "ddim"
 
 dfrise:
-  n_masks: 500            # RISE-style N random masks per step
+  n_masks: 100            # RISE-style N random masks per step
   window_size: 15         # SSIM local window (reference: SSIM(15))
   prob_thresh: 0.5        # per-element mask keep probability
   seed: 0                 # mask-seed: int = reproducible; null = fresh each run
