@@ -21,33 +21,39 @@ def exponential_timesteps(
 ) -> np.ndarray:
     """Return l timesteps from T..0, concentrated per `gear`.
 
-    Math:
-        δ^(l+γ) = T                       (12)   boundary condition
-        δ       = e^(ln T / (l+γ))        (13)
-        p_t     = T - δ^(t+γ)             (14)
+    Transcribed from the reference notebook (X-Diffusion/Experiments.ipynb):
 
-    For gear='early', p_t as above ⇒ dense near T.
-    For gear='late',  p_t = δ^(t+γ) (mirrored) ⇒ dense near 0.
+        alpha      = e^(ln(T) / (l + gamma))
+        early:     [T - int(alpha**(i+1+gamma)) for i in range(l)], then
+                   insert 999 at the front and drop the final entry
+        latter:    [int(alpha**(i+1+gamma)) for i in range(l)], sorted
+                   descending, with a leading 1000 clamped to 999
 
-    γ small (<30): cluster between 1000 and 800 (very early).
-    γ=60: paper's early-stage default.
+    The `i+1+gamma` exponent (not `i+gamma`) is what makes the first generated
+    step 893 rather than 900, and the insert/pop pair is what pins the schedule
+    to start at 999 and end above 0 -- both matter for matching the reference.
+
+    gear='early'  -> dense near T (early denoising stages)
+    gear='late'   -> dense near 0 (late denoising stages); 'latter' accepted
     """
-    delta = np.exp(np.log(T) / (l + gamma))
+    if gear not in ("early", "late", "latter"):
+        raise ValueError(f"gear must be 'early' or 'late', got {gear}")
+    alpha = np.exp(np.log(T) / (l + gamma))
+    idx = np.arange(l) + 1 + gamma
 
     if gear == "early":
-        steps = T - delta ** (np.arange(l) + gamma)
-    elif gear == "late":
-        steps = delta ** (np.arange(l) + gamma)
+        steps = [T - int(alpha ** e) for e in idx]
+        steps.insert(0, T - 1)   # 999: the true first step of the reverse process
+        steps.pop(-1)            # drop the trailing T - int(T) == 0 entry
     else:
-        raise ValueError(f"gear must be 'early' or 'late', got {gear}")
+        steps = [int(alpha ** e) for e in idx]
+        steps.sort(reverse=True)
+        if steps[0] == T:
+            steps[0] = T - 1
 
-    # clip numerics, sort descending from T to 0, and return INT timesteps:
-    # the UNet/scheduler index internal arrays by timestep (alphas_cumprod[t]),
-    # so float64 steps crash or silently misbehave. Floats are rounded so the
-    # counts stay exact (all l steps above).
-    steps = np.clip(steps, 0, T)
-    steps = np.sort(steps)[::-1]
-    return np.round(steps).astype(int)
+    # Int list already; keep as an int array for indexing parity with
+    # scheduler.timesteps.
+    return np.array(steps, dtype=int)
 
 
 def uniform_timesteps(T: int = 1000, l: int = 30) -> np.ndarray:

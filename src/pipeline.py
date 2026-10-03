@@ -1,7 +1,9 @@
-"""Shared Stable Diffusion loading and DDIM inference loop.
+"""Shared Stable Diffusion loading and the reverse-denoise loop.
 
-The paper uses deterministic DDIM (eta=0) with 30 steps on a latent diffusion
-model (Stable Diffusion v1.5, CLIP ViT-L/14 text encoder, 512x512).
+The reference implementation (X-Diffusion) uses Stable Diffusion v1.4 with a
+DPM-Solver++ multistep scheduler over 20 steps. DDIM (eta=0) remains selectable
+via cfg['model']['scheduler'], which is required for custom exponential
+timestep experiments since DPM-Solver++ relies on its own timestep grid.
 
 This module centralizes:
 - pipeline loading (with float16 + safety-cleaner off)
@@ -12,7 +14,12 @@ from __future__ import annotations
 
 import torch
 import yaml
-from diffusers import AutoencoderKL, DDIMScheduler, UNet2DConditionModel
+from diffusers import (
+    AutoencoderKL,
+    DDIMScheduler,
+    DPMSolverMultistepScheduler,
+    UNet2DConditionModel,
+)
 from transformers import CLIPTextModel, CLIPTokenizer
 import numpy as np
 
@@ -36,7 +43,11 @@ def load_stable_diffusion_components(cfg: dict, device: str | None = None):
     vae = AutoencoderKL.from_pretrained(repo, subfolder="vae").to(device)
     unet = UNet2DConditionModel.from_pretrained(repo, subfolder="unet").to(device)
 
-    scheduler = DDIMScheduler.from_pretrained(repo, subfolder="scheduler")
+    sched_name = cfg["model"].get("scheduler", "ddim").lower()
+    if sched_name == "dpmsolver++":
+        scheduler = DPMSolverMultistepScheduler.from_pretrained(repo, subfolder="scheduler")
+    else:
+        scheduler = DDIMScheduler.from_pretrained(repo, subfolder="scheduler")
     scheduler.set_timesteps(cfg["model"]["num_inference_steps"])
 
     # fp16 is a CUDA-only optimization; silently skip on CPU.
@@ -105,6 +116,11 @@ def denoise_with_hooks(
 
     emb = encode_prompt(components, prompt, device)
 
+    # DDIM takes eta; DPM-Solver++ is deterministic and has no eta argument.
+    step_kwargs = {} if isinstance(
+        scheduler, DPMSolverMultistepScheduler
+    ) else {"eta": 0.0}
+
     for t_idx, t in enumerate(timesteps):
         # store the pre-step latent so tools can perturb it if they want
         current = latents.detach().clone()
@@ -121,8 +137,7 @@ def denoise_with_hooks(
             noise_pred_text - noise_pred_uncond
         )
 
-        # DDIM deterministic update (eta=0)
-        prev = scheduler.step(noise_pred, t, latents, eta=0.0).prev_sample
+        prev = scheduler.step(noise_pred, t, latents, **step_kwargs).prev_sample
         prev = prev.to(dtype=latents.dtype)   # scheduler can promote to fp32
         if step_hook is not None:
             step_hook(noise_pred=noise_pred, current=current, t=t, t_idx=t_idx, prev=prev)

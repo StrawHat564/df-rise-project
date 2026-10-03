@@ -68,15 +68,17 @@ def df_cam_step(
         fh, bh, acts, grads = _register_forward_backward_hooks(target_module)
 
         # ---- forward: noise prediction to use as target ----
-        # Batch shape mirrors denoise_with_hooks (uncond + cond copies). Only
-        # the cond branch's output score is backpropagated, so the uncond
-        # result is discarded (`_`).
+        # Batch shape mirrors denoise_with_hooks (uncond + cond copies). The
+        # backprop target is the CFG-combined prediction -- the same quantity
+        # the sampler actually consumes -- so gradients flow through both
+        # halves rather than only the conditional branch.
         z = torch.cat([latent] * 2)
         pred = unet(z, torch.as_tensor([t] * 2, device=device), text_emb).sample
-        _, pred_text = pred.chunk(2)
+        pred_uncond, pred_text = pred.chunk(2)
+        pred_cfg = pred_uncond + guidance_scale * (pred_text - pred_uncond)
         # sum of pixels of the output rep as target; float() avoids fp16
         # overflow when summing 4*64*64 output values.
-        target_score = pred_text.float().sum()
+        target_score = pred_cfg.float().sum()
 
         # ---- backward: get grads wrt the hooked module's output ----
         # retain_graph is unneeded: only one backward and no reuse of the graph.
@@ -95,8 +97,10 @@ def df_cam_step(
             bh.remove()
     latent.requires_grad_(False)
 
-    # multiple batch entries averaged, normalized
-    cam = cam[0, 0] if cam.shape[0] == 1 else cam.mean(0)
+    # (B, 1, h, w) -> (h, w). Index the channel explicitly: with CFG the hook batch
+    # is 2, so cam.mean(0) alone would leave a 3-D (1, h, w) tensor and the
+    # interpolate below would blow up on a 5-D input.
+    cam = cam.mean(0)[0]
     cam = torch.nn.functional.interpolate(
         cam.unsqueeze(0).unsqueeze(0), size=latent.shape[-2:],
         mode="bilinear", align_corners=False

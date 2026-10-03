@@ -27,7 +27,10 @@ def heatmap_overlay(image: np.ndarray, saliency: np.ndarray,
     """Blend saliency onto image (any resolution). image (H,W,3)[0,1]; saliency (H,W)."""
     if saliency.shape[:2] != image.shape[:2]:
         saliency = _upsample(saliency, image.shape[:2])
-    norm = Normalize(vmin=0, vmax=max(1e-6, float(saliency.max())))
+    # DF-RISE returns raw accumulated scores which are legitimately negative
+    # (the SSIM structure term can be < 0), so normalize over the real range.
+    lo, hi = float(saliency.min()), float(saliency.max())
+    norm = Normalize(vmin=lo, vmax=hi if hi > lo else lo + 1e-6)
     cm = plt.get_cmap(cmap)(norm(saliency))[..., :3]  # (H,W,3)
     return (1 - alpha) * image + alpha * cm
 

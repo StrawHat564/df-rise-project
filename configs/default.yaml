@@ -1,21 +1,24 @@
 model:
-  name: "runwayml/stable-diffusion-v1-5"   # or CompVis/stable-diffusion-v1-4
-  num_inference_steps: 30
+  name: "CompVis/stable-diffusion-v1-4"   # reference checkpoint (X-Diffusion)
+  num_inference_steps: 20
   guidance_scale: 7.5
   device: "cuda"          # 'cuda' | 'cpu' — flip to cpu if no NVIDIA GPU
   fp16: true              # only applied on CUDA; ignored on cpu
   seed: 42
+  # 'dpmsolver++' matches the reference; 'ddim' is needed for custom
+  # exponential timestep experiments (dpm-solver++ requires its own grid).
+  scheduler: "dpmsolver++"
 
 dfrise:
-  n_masks: 100            # RISE-style N random masks per step
-  window_size: 7          # SSIM local window
-  mask_threshold: 0.0     # fixed Gaussian threshold (paper default, ~50% kept); null = adaptive
+  n_masks: 500            # RISE-style N random masks per step
+  window_size: 15         # SSIM local window (reference: SSIM(15))
+  prob_thresh: 0.5        # per-element mask keep probability
   seed: 0                 # mask-seed: int = reproducible; null = fresh each run
 
 dfcam:
   # layer inside the U-Net to hook for activations/gradients.
-  # e.g. 'up_blocks.3' (decoder output), 'mid_block' or 'down_blocks.0'
-  target_layer: "up_blocks.3"
+  # e.g. 'mid_block.resnets.1' (reference), 'up_blocks.3', 'down_blocks.0'
+  target_layer: "mid_block.resnets.1"
 
 exponential:
   T: 1000
